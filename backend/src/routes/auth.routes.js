@@ -5,9 +5,8 @@ const router = express.Router();
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
-const supabaseTable = process.env.SUPABASE_USER_TABLE;
 
-if (!supabaseUrl || !supabaseKey || !supabaseTable) {
+if (!supabaseUrl || !supabaseKey) {
     throw new Error("Missing Supabase environment variables");
 }
 
@@ -78,8 +77,5 @@ router.get("/me", async (req, res) => {
     return res.json(data);
 });
 
-router.get("/table", (req, res) => {
-    return res.json({ table: supabaseTable });
-});
 
 module.exports = router;
