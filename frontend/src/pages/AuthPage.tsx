@@ -6,64 +6,127 @@ import {
   EyeOff,
   LayoutDashboard,
   Layers,
+  Loader2,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { User } from "../types/userType";
+import { apiPost } from "../lib/api";
+import type { User } from "../types/userType";
 
-interface AuthPageProps {
+type Props = {
   onLogin: (user: User) => void;
-  load: <T,>(key: string, fallback: T) => T;
-  save: (key: string, val: unknown) => void;
+  load: unknown;
+  save: (k: string, v: unknown) => void;
   uid: () => string;
-  SK: {
-    USERS: string;
-    SESSION: string;
-  };
-}
+  SK: unknown;
+};
 
-export function AuthPage({ onLogin, load, save, uid, SK }: AuthPageProps) {
+export function AuthPage({ onLogin }: Props) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [showPw, setShowPw] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    const users = load<User[]>(SK.USERS, []);
+    setIsSubmitting(true);
 
-    if (mode === "signup") {
-      if (!form.name.trim()) return setError("Name is required.");
-      if (!form.email.includes("@")) return setError("Enter a valid email.");
-      if (form.password.length < 6)
-        return setError("Password must be at least 6 characters.");
-      if (users.find((u) => u.email === form.email.toLowerCase()))
-        return setError("An account with this email already exists.");
+    try {
+      if (mode === "signup") {
+        if (!form.name.trim()) {
+          setError("Name is required.");
+          return;
+        }
+        if (!form.email.includes("@")) {
+          setError("Enter a valid email.");
+          return;
+        }
+        if (form.password.length < 6) {
+          setError("Password must be at least 6 characters.");
+          return;
+        }
 
-      const user: User = {
-        id: uid(),
-        email: form.email.toLowerCase().trim(),
-        password: form.password,
-        name: form.name.trim(),
-        createdAt: new Date().toISOString(),
-      };
-      save(SK.USERS, [...users, user]);
-      save(SK.SESSION, user.id);
-      onLogin(user);
-    } else {
-      const user = users.find(
-        (u) => u.email === form.email.toLowerCase().trim() && u.password === form.password
-      );
-      if (!user) return setError("Invalid email or password.");
-      save(SK.SESSION, user.id);
-      onLogin(user);
+        try {
+          await apiPost('/auth/signup', {
+            email: form.email.toLowerCase().trim(),
+            password: form.password,
+            name: form.name.trim(),
+          });
+          // Supabase may require email confirmation depending on project settings.
+          // If email confirmation is disabled, onAuthStateChange in router.tsx
+          // will fire SIGNED_IN automatically and navigate to /dashboard.
+          setSignupSuccess(true);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          setError(message);
+        }
+      } else {
+        try {
+          const res = await apiPost('/auth/signin', {
+            email: form.email.toLowerCase().trim(),
+            password: form.password,
+          });
+          // Backend returns Supabase auth result. If a user is present,
+          // call `onLogin` (AppRoute will set user + navigate).
+          const user = (res as any)?.user;
+          if (user && onLogin) {
+            const mapped: User = {
+              id: user.id,
+              email: user.email,
+              name: (user.user_metadata && user.user_metadata.name) || "",
+              avatarUrl: (user.user_metadata && user.user_metadata.avatar_url) || undefined,
+              createdAt: user.created_at || new Date().toISOString(),
+            };
+            onLogin(mapped);
+          }
+          // If no user is returned (e.g. email confirmation required),
+          // the signup flow handles that separately.
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          setError(message);
+        }
+      }
+    } finally {
+      setIsSubmitting(false);
     }
+  }
+
+  if (signupSuccess) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-8">
+        <div className="text-center max-w-sm">
+          <div className="size-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle2 className="size-8 text-primary" />
+          </div>
+          <h2 className="text-xl font-bold mb-2">Check your email</h2>
+          <p className="text-muted-foreground text-sm mb-6">
+            We sent a confirmation link to{" "}
+            <span className="font-medium text-foreground">{form.email}</span>.
+            Click the link to activate your account.
+          </p>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => {
+              setSignupSuccess(false);
+              setMode("login");
+              setForm({ name: "", email: "", password: "" });
+            }}
+          >
+            Back to Sign In
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-background flex">
+      {/* Left panel */}
       <div className="hidden lg:flex lg:w-1/2 bg-primary flex-col items-center justify-center p-12 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -86,13 +149,14 @@ export function AuthPage({ onLogin, load, save, uid, SK }: AuthPageProps) {
           </div>
           <h1 className="text-4xl font-bold mb-4">Boardly</h1>
           <p className="text-white/80 text-lg max-w-sm leading-relaxed">
-            Your offline-first Kanban workspace. Manage tasks, track progress, and meet deadlines — all without an internet connection.
+            Your collaborative Kanban workspace. Manage tasks, track progress,
+            and meet deadlines — synced across all your devices.
           </p>
           <div className="mt-12 grid grid-cols-3 gap-6 text-center">
             {[
               { label: "Boards", icon: LayoutDashboard },
               { label: "Cards", icon: CheckCircle2 },
-              { label: "Offline", icon: Circle },
+              { label: "Synced", icon: Circle },
             ].map(({ label, icon: Icon }) => (
               <div key={label} className="bg-white/10 rounded-xl p-4">
                 <Icon className="size-6 mx-auto mb-2 text-white/90" />
@@ -103,6 +167,7 @@ export function AuthPage({ onLogin, load, save, uid, SK }: AuthPageProps) {
         </div>
       </div>
 
+      {/* Right panel */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="flex items-center gap-3 mb-8 lg:hidden">
@@ -130,6 +195,7 @@ export function AuthPage({ onLogin, load, save, uid, SK }: AuthPageProps) {
                   placeholder="Jane Smith"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  disabled={isSubmitting}
                 />
               </div>
             )}
@@ -141,6 +207,7 @@ export function AuthPage({ onLogin, load, save, uid, SK }: AuthPageProps) {
                 placeholder="jane@example.com"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
+                disabled={isSubmitting}
               />
             </div>
             <div className="space-y-1.5">
@@ -149,17 +216,26 @@ export function AuthPage({ onLogin, load, save, uid, SK }: AuthPageProps) {
                 <Input
                   id="password"
                   type={showPw ? "text" : "password"}
-                  placeholder={mode === "signup" ? "At least 6 characters" : "Your password"}
+                  placeholder={
+                    mode === "signup" ? "At least 6 characters" : "Your password"
+                  }
                   value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, password: e.target.value })
+                  }
                   className="pr-10"
+                  disabled={isSubmitting}
                 />
                 <button
                   type="button"
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   onClick={() => setShowPw(!showPw)}
                 >
-                  {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  {showPw ? (
+                    <EyeOff className="size-4" />
+                  ) : (
+                    <Eye className="size-4" />
+                  )}
                 </button>
               </div>
             </div>
@@ -170,13 +246,24 @@ export function AuthPage({ onLogin, load, save, uid, SK }: AuthPageProps) {
               </div>
             )}
 
-            <Button type="submit" className="w-full">
-              {mode === "login" ? "Sign In" : "Create Account"}
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                  {mode === "login" ? "Signing in..." : "Creating account..."}
+                </>
+              ) : mode === "login" ? (
+                "Sign In"
+              ) : (
+                "Create Account"
+              )}
             </Button>
           </form>
 
           <p className="text-center text-sm text-muted-foreground mt-6">
-            {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
+            {mode === "login"
+              ? "Don't have an account?"
+              : "Already have an account?"}{" "}
             <button
               className="text-primary font-medium hover:underline"
               onClick={() => {
