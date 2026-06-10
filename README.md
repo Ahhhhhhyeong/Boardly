@@ -1,5 +1,21 @@
 # Boardly
 
+## Table of Contents
+
+- [1. 프로젝트 소개 / Project Intro](#1-프로젝트-소개-project-intro)
+- [2. 주요 기능 / Main Functions](#2-주요-기능-main-functions)
+- [3. 기술 스택 / Tech Stack](#3-기술-스택-tech-stack)
+- [4. 프로젝트 구조 / Project Structure](#4-프로젝트-구조-project-structure)
+- [5. 사전 준비 / Prerequisites](#5-사전-준비-prerequisites)
+- [6. 환경변수 설정 / Environment Variables Configuration](#6-환경변수-설정-environment-variables-configuration)
+- [7. Docker Compose로 실행 / Run with Docker Compose](#7-docker-compose로-실행-run-with-docker-compose)
+- [8. 개별 실행 / Run Individually](#8-개별-실행-run-individually)
+- [9. 인증 흐름 / Authentication Flow](#9-인증-흐름-authentication-flow)
+- [10. 데이터 모델 / Data Model](#10-데이터-모델-data-model)
+- [11. API 개요 / API Overview](#11-api-개요-api-overview)
+- [12. 빌드 / Build](#12-빌드-build)
+- [13. 참고 문서 / References](#13-참고-문서-references)
+
 ## 1. 프로젝트 소개 (Project Intro)
 
 1. Boardly는 개인 작업 보드를 만들고, 컬럼과 카드를 통해 업무 흐름을 관리하는 Kanban 보드 애플리케이션입니다. 프론트엔드는 React/Vite 기반으로 구성되어 있으며, 백엔드는 Express와 Supabase를 통해 인증 및 데이터 API를 제공합니다.
@@ -7,7 +23,7 @@
 
 ![dashboard image](https://github.com/user-attachments/assets/899e7a7f-8c50-4e05-9045-ad28f2443477)
 
-## 2. 주요 기능 
+## 2. 주요 기능 (Main Functions)
 
 1. 이메일/비밀번호 기반 회원가입 및 로그인, 이메일 확인 후 자동 로그인 흐름을 지원합니다.   
    Supports email/password signup and signin, including automatic login after email confirmation.
@@ -23,7 +39,7 @@
 
 ![board image](https://github.com/user-attachments/assets/ea522c97-7844-4a74-bc75-5573200401af)
 
-## 3. 기술 스택
+## 3. 기술 스택 (Tech Stack)
 
 1. Frontend: React, Vite, TypeScript, React Router, Tailwind CSS, Radix UI, lucide-react
 
@@ -33,7 +49,7 @@
 
 1. Local development: Docker Compose or separate npm commands can be used.
 
-## 4. 프로젝트 구조
+## 4. 프로젝트 구조 (Project Structure)
 
 ```text
 Boardly/
@@ -53,7 +69,7 @@ Boardly/
 1. `docs/supabase_schema.md`는 Supabase 테이블과 RLS 정책 설정에 필요한 SQL을 포함합니다.  
    `docs/supabase_schema.md` includes the SQL required for Supabase tables and RLS policies.
 
-## 5. 사전 준비
+## 5. 사전 준비 (Prerequisites)
 
 1. Node.js와 npm이 필요합니다.   
    Node.js and npm are required.
@@ -71,7 +87,7 @@ Boardly/
 http://localhost:5173/auth/callback
 ```
 
-## 6. 환경변수 설정
+## 6. 환경변수 설정 (Environment Variables Configuration)
 
 1. `.env.example`을 참고하여 루트 디렉토리에 `.env` 파일을 생성합니다.   
    Create a `.env` file in the root directory using `.env.example` as a reference.
@@ -99,7 +115,7 @@ SUPABASE_KEY=YOUR_SUPABASE_KEY
 1. 배포 환경에서는 `AUTH_REDIRECT_URL`을 실제 프론트엔드 도메인의 `/auth/callback` 주소로 변경합니다.   
     In production, set `AUTH_REDIRECT_URL` to the `/auth/callback` URL on your real frontend domain.
 
-## 7. Docker Compose로 실행
+## 7. Docker Compose로 실행 (Run with Docker Compose)
 
 1. 루트 디렉토리에서 아래 명령어를 실행합니다.   
    Run the following command from the root directory.
@@ -114,7 +130,7 @@ docker compose up --build
 1. 백엔드는 기본적으로 `http://localhost:3000`에서 실행됩니다.   
     The backend runs at `http://localhost:3000` by default.
 
-## 8. 개별 실행
+## 8. 개별 실행 (Run Individually)
 
 1. 백엔드를 실행합니다.   
    Start the backend.
@@ -134,7 +150,7 @@ npm install
 npm run dev
 ```
 
-## 9. 인증 흐름
+## 9. 인증 흐름 (Authentication Flow)
 
 1. 사용자가 회원가입을 하면 Supabase가 이메일 확인 메일을 발송합니다.   
    When a user signs up, Supabase sends an email confirmation message.
@@ -150,7 +166,7 @@ npm run dev
 
 ![auth image](https://github.com/user-attachments/assets/30f5734a-6c8b-47f8-bd31-a80068ae1345)
 
-## 10. 데이터 모델
+## 10. 데이터 모델 (Data Model)
 
 1. Supabase 데이터는 `profiles`, `boards`, `columns`, `cards` 테이블로 구성됩니다.   
     Supabase data is organized into `profiles`, `boards`, `columns`, and `cards` tables.
@@ -167,7 +183,7 @@ npm run dev
 1. `cards`는 각 보드와 컬럼에 속한 작업 항목을 저장합니다.   
     `cards` stores task items that belong to a board and column.
 
-## 11. API 개요
+## 11. API 개요 (API Overview)
 
 1. 인증 API는 `/auth/signup`, `/auth/signin`, `/auth/session`, `/auth/signout`, `/auth/me`를 제공합니다.   
    Auth APIs include `/auth/signup`, `/auth/signin`, `/auth/session`, `/auth/signout`, and `/auth/me`.
@@ -181,7 +197,7 @@ npm run dev
 1. 카드 API는 `/cards`와 `/cards/:id`를 통해 카드 데이터를 관리합니다.   
    Card APIs manage card data through `/cards` and `/cards/:id`.
 
-## 12. 빌드
+## 12. 빌드 (Build)
 
 1. 프론트엔드 프로덕션 빌드를 실행합니다.   
    Run the frontend production build.
@@ -199,7 +215,7 @@ cd backend
 npm start
 ```
 
-## 13. 참고 문서
+## 13. 참고 문서 (References)
 
 1. Supabase 스키마와 RLS 정책은 `docs/supabase_schema.md`를 확인하세요.   
    See `docs/supabase_schema.md` for the Supabase schema and RLS policies.
