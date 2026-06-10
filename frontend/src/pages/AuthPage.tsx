@@ -15,11 +15,7 @@ import { apiPost } from "../lib/api";
 import type { User } from "../types/userType";
 
 type Props = {
-  onLogin: (user: User) => void;
-  load: unknown;
-  save: (k: string, v: unknown) => void;
-  uid: () => string;
-  SK: unknown;
+  onLogin: (user: User) => Promise<void>;
 };
 
 export function AuthPage({ onLogin }: Props) {
@@ -56,9 +52,6 @@ export function AuthPage({ onLogin }: Props) {
             password: form.password,
             name: form.name.trim(),
           });
-          // Supabase may require email confirmation depending on project settings.
-          // If email confirmation is disabled, onAuthStateChange in router.tsx
-          // will fire SIGNED_IN automatically and navigate to /dashboard.
           setSignupSuccess(true);
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
@@ -70,21 +63,10 @@ export function AuthPage({ onLogin }: Props) {
             email: form.email.toLowerCase().trim(),
             password: form.password,
           });
-          // Backend returns Supabase auth result. If a user is present,
-          // call `onLogin` (AppRoute will set user + navigate).
-          const user = (res as any)?.user;
+          const user = (res as { user?: User })?.user;
           if (user && onLogin) {
-            const mapped: User = {
-              id: user.id,
-              email: user.email,
-              name: (user.user_metadata && user.user_metadata.name) || "",
-              avatarUrl: (user.user_metadata && user.user_metadata.avatar_url) || undefined,
-              createdAt: user.created_at || new Date().toISOString(),
-            };
-            onLogin(mapped);
+            await onLogin(user);
           }
-          // If no user is returned (e.g. email confirmation required),
-          // the signup flow handles that separately.
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
           setError(message);

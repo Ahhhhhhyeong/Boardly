@@ -6,35 +6,11 @@ import { AuthPage } from "../pages/AuthPage";
 import { DashboardPage } from "../pages/DashboardPage";
 import { BoardPage } from "../pages/BoardPage";
 import { BOARD_COLORS } from "../components/board-ui";
+import { apiDelete, apiGet, apiPatch, apiPost } from "../lib/api";
 
 const SK = {
-  USERS: "boardly_users",
-  SESSION: "boardly_session",
-  BOARDS: "boardly_boards",
-  COLUMNS: "boardly_columns",
-  CARDS: "boardly_cards",
   THEME: "boardly_theme",
 };
-
-const DEFAULT_COLUMNS = [
-  { title: "To Do", color: "#6b7280" },
-  { title: "In Progress", color: "#f59e0b" },
-  { title: "Review", color: "#8b5cf6" },
-  { title: "Done", color: "#10b981" },
-];
-
-function load<T>(key: string, fallback: T): T {
-  try {
-    const v = localStorage.getItem(key);
-    return v ? (JSON.parse(v) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function save(key: string, val: unknown) {
-  localStorage.setItem(key, JSON.stringify(val));
-}
 
 function uid() {
   return crypto.randomUUID();
@@ -42,7 +18,7 @@ function uid() {
 
 async function authGuard() {
   try {
-    const response = await fetch("/login", {
+    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000"}/auth/me`, {
       method: "GET",
       credentials: "include",
       headers: { Accept: "application/json" },
@@ -53,7 +29,7 @@ async function authGuard() {
     }
 
     const payload = await response.json();
-    if (!payload || payload.authenticated !== true) {
+    if (!payload?.user) {
       return redirect("/auth");
     }
 
@@ -63,41 +39,100 @@ async function authGuard() {
   }
 }
 
+async function isAuthenticated() {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000"}/auth/me`, {
+      method: "GET",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const payload = await response.json();
+    return Boolean(payload?.user);
+  } catch {
+    return false;
+  }
+}
+
+async function rootRedirect() {
+  return redirect((await isAuthenticated()) ? "/dashboard" : "/auth");
+}
+
+async function guestOnlyGuard() {
+  if (await isAuthenticated()) {
+    return redirect("/dashboard");
+  }
+
+  return null;
+}
+
 interface AppRouteContext {
   user: User | null;
   selectedBoard: Board | null;
+  isInitializing: boolean;
   isDark: boolean;
   boards: Board[];
   columns: Column[];
   cards: Card[];
-  onLogin: (user: User) => void;
-  onLogout: () => void;
+  onLogin: (user: User) => Promise<void>;
+  onLogout: () => Promise<void>;
   onSelectBoard: (board: Board) => void;
-  onCreateBoard: (board: Board) => void;
-  onUpdateBoard: (board: Board) => void;
-  onDeleteBoard: (id: string) => void;
-  onAddColumn: (column: Column) => void;
-  onUpdateColumn: (column: Column) => void;
-  onDeleteColumn: (id: string) => void;
-  onAddCard: (card: Card) => void;
-  onUpdateCard: (card: Card) => void;
-  onDeleteCard: (id: string) => void;
+  onCreateBoard: (board: Board) => Promise<void>;
+  onUpdateBoard: (board: Board) => Promise<void>;
+  onDeleteBoard: (id: string) => Promise<void>;
+  onAddColumn: (column: Column) => Promise<void>;
+  onUpdateColumn: (column: Column) => Promise<void>;
+  onDeleteColumn: (id: string) => Promise<void>;
+  onAddCard: (card: Card) => Promise<void>;
+  onUpdateCard: (card: Card) => Promise<void>;
+  onDeleteCard: (id: string) => Promise<void>;
   onToggleTheme: () => void;
   uid: () => string;
   boardColors: string[];
-  load: <T,>(key: string, fallback: T) => T;
-  save: (key: string, val: unknown) => void;
-  SK: typeof SK;
 }
+
+type CreateBoardResponse = {
+  board: Board;
+  columns: Column[];
+};
 
 function AppRoute() {
   const [user, setUser] = useState<User | null>(null);
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [isDark, setIsDark] = useState(false);
   const [boards, setBoards] = useState<Board[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
   const navigate = useNavigate();
+
+  async function loadWorkspace(knownUser?: User) {
+    try {
+      const [me, nextBoards, nextColumns, nextCards] = await Promise.all([
+        knownUser ? Promise.resolve({ user: knownUser }) : apiGet<{ user: User }>("/auth/me"),
+        apiGet<Board[]>("/boards"),
+        apiGet<Column[]>("/columns"),
+        apiGet<Card[]>("/cards"),
+      ]);
+
+      setUser(me.user);
+      setBoards(nextBoards);
+      setColumns(nextColumns);
+      setCards(nextCards);
+    } catch {
+      setUser(null);
+      setBoards([]);
+      setColumns([]);
+      setCards([]);
+      throw new Error("Unable to load workspace");
+    } finally {
+      setIsInitializing(false);
+    }
+  }
 
   useEffect(() => {
     const theme = localStorage.getItem(SK.THEME);
@@ -106,18 +141,7 @@ function AppRoute() {
       document.documentElement.classList.add("dark");
     }
 
-    const sessionId = localStorage.getItem(SK.SESSION);
-    const users = load<User[]>(SK.USERS, []);
-    if (sessionId) {
-      const u = users.find((x) => x.id === sessionId);
-      if (u) {
-        setUser(u);
-      }
-    }
-
-    setBoards(load<Board[]>(SK.BOARDS, []));
-    setColumns(load<Column[]>(SK.COLUMNS, []));
-    setCards(load<Card[]>(SK.CARDS, []));
+    loadWorkspace().catch(() => undefined);
   }, []);
 
   function toggleTheme() {
@@ -127,89 +151,70 @@ function AppRoute() {
     localStorage.setItem(SK.THEME, next ? "dark" : "light");
   }
 
-  function handleLogin(u: User) {
-    setUser(u);
+  async function handleLogin(u: User) {
+    await loadWorkspace(u);
     navigate("/dashboard");
   }
 
-  function handleLogout() {
-    localStorage.removeItem(SK.SESSION);
+  async function handleLogout() {
+    await apiPost("/auth/signout", {});
     setUser(null);
     setSelectedBoard(null);
+    setBoards([]);
+    setColumns([]);
+    setCards([]);
     navigate("/auth");
   }
 
-  function createBoard(b: Board) {
-    const defaultCols: Column[] = DEFAULT_COLUMNS.map((dc, i) => ({
-      id: uid(),
-      boardId: b.id,
-      title: dc.title,
-      color: dc.color,
-      order: i,
-    }));
-    const next = [...boards, b];
-    const nextCols = [...columns, ...defaultCols];
-    setBoards(next);
-    setColumns(nextCols);
-    save(SK.BOARDS, next);
-    save(SK.COLUMNS, nextCols);
+  async function createBoard(b: Board) {
+    const created = await apiPost<CreateBoardResponse>("/boards", b);
+    setBoards((current) => [...current, created.board]);
+    setColumns((current) => [...current, ...created.columns]);
   }
 
-  function updateBoard(b: Board) {
-    const next = boards.map((x) => (x.id === b.id ? b : x));
-    setBoards(next);
-    save(SK.BOARDS, next);
+  async function updateBoard(b: Board) {
+    const updated = await apiPatch<Board>(`/boards/${b.id}`, b);
+    setBoards((current) => current.map((x) => (x.id === updated.id ? updated : x)));
+    setSelectedBoard((current) => (current?.id === updated.id ? updated : current));
   }
 
-  function deleteBoard(id: string) {
-    const nextBoards = boards.filter((x) => x.id !== id);
-    const nextCols = columns.filter((x) => x.boardId !== id);
-    const nextCards = cards.filter((x) => x.boardId !== id);
-    setBoards(nextBoards);
-    setColumns(nextCols);
-    setCards(nextCards);
-    save(SK.BOARDS, nextBoards);
-    save(SK.COLUMNS, nextCols);
-    save(SK.CARDS, nextCards);
+  async function deleteBoard(id: string) {
+    await apiDelete(`/boards/${id}`);
+    setBoards((current) => current.filter((x) => x.id !== id));
+    setColumns((current) => current.filter((x) => x.boardId !== id));
+    setCards((current) => current.filter((x) => x.boardId !== id));
+    setSelectedBoard((current) => (current?.id === id ? null : current));
   }
 
-  function addColumn(col: Column) {
-    const next = [...columns, col];
-    setColumns(next);
-    save(SK.COLUMNS, next);
+  async function addColumn(col: Column) {
+    const created = await apiPost<Column>("/columns", col);
+    setColumns((current) => [...current, created]);
   }
 
-  function updateColumn(col: Column) {
-    const next = columns.map((x) => (x.id === col.id ? col : x));
-    setColumns(next);
-    save(SK.COLUMNS, next);
+  async function updateColumn(col: Column) {
+    const updated = await apiPatch<Column>(`/columns/${col.id}`, col);
+    setColumns((current) => current.map((x) => (x.id === updated.id ? updated : x)));
   }
 
-  function deleteColumn(id: string) {
-    const nextCols = columns.filter((x) => x.id !== id);
-    const nextCards = cards.filter((x) => x.columnId !== id);
-    setColumns(nextCols);
-    setCards(nextCards);
-    save(SK.COLUMNS, nextCols);
-    save(SK.CARDS, nextCards);
+  async function deleteColumn(id: string) {
+    await apiDelete(`/columns/${id}`);
+    setColumns((current) => current.filter((x) => x.id !== id));
+    setCards((current) => current.filter((x) => x.columnId !== id));
   }
 
-  function addCard(card: Card) {
-    const next = [...cards, card];
-    setCards(next);
-    save(SK.CARDS, next);
+  async function addCard(card: Card) {
+    const created = await apiPost<Card>("/cards", card);
+    setCards((current) => [...current, created]);
   }
 
-  function updateCard(card: Card) {
-    const next = cards.map((x) => (x.id === card.id ? card : x));
-    setCards(next);
-    save(SK.CARDS, next);
+  async function updateCard(card: Card) {
+    const updated = await apiPatch<Card>(`/cards/${card.id}`, card);
+    setCards((current) => current.map((x) => (x.id === updated.id ? updated : x)));
   }
 
-  function deleteCard(id: string) {
-    const next = cards.filter((x) => x.id !== id);
-    setCards(next);
-    save(SK.CARDS, next);
+  async function deleteCard(id: string) {
+    await apiDelete(`/cards/${id}`);
+    setCards((current) => current.filter((x) => x.id !== id));
   }
 
   function selectBoard(b: Board) {
@@ -220,6 +225,7 @@ function AppRoute() {
   const context: AppRouteContext = {
     user,
     selectedBoard,
+    isInitializing,
     isDark,
     boards,
     columns,
@@ -239,9 +245,6 @@ function AppRoute() {
     onToggleTheme: toggleTheme,
     uid,
     boardColors: BOARD_COLORS,
-    load,
-    save,
-    SK,
   };
 
   return <Outlet context={context} />;
@@ -252,13 +255,70 @@ function useAppRouteContext() {
 }
 
 function AuthPageRoute() {
-  const { onLogin, load, save, uid, SK } = useAppRouteContext();
-  return <AuthPage onLogin={onLogin} load={load} save={save} uid={uid} SK={SK} />;
+  const { onLogin } = useAppRouteContext();
+  return <AuthPage onLogin={onLogin} />;
+}
+
+function AuthCallbackRoute() {
+  const { onLogin } = useAppRouteContext();
+  const navigate = useNavigate();
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function completeEmailConfirmation() {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const queryParams = new URLSearchParams(window.location.search);
+      const accessToken = hashParams.get("access_token") || queryParams.get("access_token");
+      const expiresIn = Number(hashParams.get("expires_in") || queryParams.get("expires_in") || 3600);
+      const code = queryParams.get("code");
+
+      if (!accessToken && !code) {
+        setError("Email confirmation token was not found.");
+        return;
+      }
+
+      try {
+        const session = await apiPost<{ user: User }>("/auth/session", {
+          accessToken,
+          expiresIn,
+          code,
+        });
+        window.history.replaceState(null, "", "/auth/callback");
+        await onLogin(session.user);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+      }
+    }
+
+    completeEmailConfirmation();
+  }, []);
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-8">
+        <div className="text-center max-w-sm">
+          <h2 className="text-xl font-bold mb-2">Email confirmation failed</h2>
+          <p className="text-muted-foreground text-sm mb-6">{error}</p>
+          <button className="text-sm font-medium text-primary" onClick={() => navigate("/auth", { replace: true })}>
+            Back to sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-8">
+      <p className="text-sm text-muted-foreground">Completing email confirmation...</p>
+    </div>
+  );
 }
 
 function DashboardPageRoute() {
   const {
     user,
+    isInitializing,
     boards,
     cards,
     onSelectBoard,
@@ -271,6 +331,10 @@ function DashboardPageRoute() {
     uid,
     boardColors,
   } = useAppRouteContext();
+
+  if (isInitializing) {
+    return null;
+  }
 
   if (!user) {
     return <Navigate to="/auth" replace />;
@@ -298,6 +362,7 @@ function DashboardPageRoute() {
 function BoardPageRoute() {
   const {
     user,
+    isInitializing,
     selectedBoard,
     columns,
     cards,
@@ -313,6 +378,10 @@ function BoardPageRoute() {
     isDark,
   } = useAppRouteContext();
   const navigate = useNavigate();
+
+  if (isInitializing) {
+    return null;
+  }
 
   if (!user) {
     return <Navigate to="/auth" replace />;
@@ -347,12 +416,11 @@ export const router = createBrowserRouter([
     path: "/",
     element: <AppRoute />,
     children: [
-      { index: true, element: <Navigate to="/auth" replace /> },
-      { path: "auth", element: <AuthPageRoute /> },
-      // { path: "dashboard", element: <DashboardPageRoute />, loader: authGuard },
-      { path: "dashboard", element: <DashboardPageRoute /> },
-      // { path: "board", element: <BoardPageRoute />, loader: authGuard },
-      { path: "board", element: <BoardPageRoute />},
+      { index: true, loader: rootRedirect },
+      { path: "auth", element: <AuthPageRoute />, loader: guestOnlyGuard },
+      { path: "auth/callback", element: <AuthCallbackRoute /> },
+      { path: "dashboard", element: <DashboardPageRoute />, loader: authGuard },
+      { path: "board", element: <BoardPageRoute />, loader: authGuard },
     ],
   },
 ]);

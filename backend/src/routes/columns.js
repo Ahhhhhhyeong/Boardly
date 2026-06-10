@@ -1,48 +1,70 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const supabase = require('../lib/supabaseClient');
 
-// Create a new column
-router.post('/', async (req, res) => {
-  const { board_id, title, color, order } = req.body;
-  const { data, error } = await supabase
-    .from('columns')
-    .insert({ board_id, title, color, order })
-    .single();
+function mapColumn(row) {
+  return {
+    id: row.id,
+    boardId: row.board_id,
+    title: row.title,
+    color: row.color,
+    order: row.order,
+  };
+}
+
+router.get("/", async (req, res) => {
+  const { data, error } = await req.supabase
+    .from("columns")
+    .select("*")
+    .order("order", { ascending: true });
+
   if (error) return res.status(400).json({ error: error.message });
-  res.status(201).json(data);
+  return res.json(data.map(mapColumn));
 });
 
-// Get all columns for a board (or all columns, filtered by RLS)
-router.get('/board/:boardId', async (req, res) => {
+router.post("/", async (req, res) => {
+  const { boardId, title, color = "#6b7280", order = 0 } = req.body;
+  const { data, error } = await req.supabase
+    .from("columns")
+    .insert({ board_id: boardId, title, color, order })
+    .select()
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+  return res.status(201).json(mapColumn(data));
+});
+
+router.get("/board/:boardId", async (req, res) => {
   const { boardId } = req.params;
-  const { data, error } = await supabase
-    .from('columns')
-    .select('*')
-    .eq('board_id', boardId);
+  const { data, error } = await req.supabase
+    .from("columns")
+    .select("*")
+    .eq("board_id", boardId)
+    .order("order", { ascending: true });
+
   if (error) return res.status(400).json({ error: error.message });
-  res.json(data);
+  return res.json(data.map(mapColumn));
 });
 
-// Update column (title, color, order)
-router.patch('/:id', async (req, res) => {
+router.patch("/:id", async (req, res) => {
   const { id } = req.params;
-  const { title, color, order } = req.body;
-  const { data, error } = await supabase
-    .from('columns')
+  const { title, color = "#6b7280", order = 0 } = req.body;
+  const { data, error } = await req.supabase
+    .from("columns")
     .update({ title, color, order })
-    .eq('id', id)
+    .eq("id", id)
+    .select()
     .single();
+
   if (error) return res.status(400).json({ error: error.message });
-  res.json(data);
+  return res.json(mapColumn(data));
 });
 
-// Delete column
-router.delete('/:id', async (req, res) => {
+router.delete("/:id", async (req, res) => {
   const { id } = req.params;
-  const { error } = await supabase.from('columns').delete().eq('id', id);
+  const { error } = await req.supabase.from("columns").delete().eq("id", id);
+
   if (error) return res.status(400).json({ error: error.message });
-  res.status(204).send();
+  return res.status(204).send();
 });
 
 module.exports = router;
